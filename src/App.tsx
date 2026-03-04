@@ -66,8 +66,10 @@ function Ring({ id, position, rotation, scale = 1, onSelect, isSelected }: {
       if (!isSelected) {
         ringRef.current.rotation.y += 0.003;
       } else if (!isDragging) {
-        // Subtle idle rotation even when selected but not dragged
-        ringRef.current.rotation.y += 0.001;
+        // Rotate on all axes at a good display speed
+        ringRef.current.rotation.x += delta * 0.8;
+        ringRef.current.rotation.y += delta * 1.2;
+        ringRef.current.rotation.z += delta * 0.5;
       }
     }
   });
@@ -140,30 +142,13 @@ function Ring({ id, position, rotation, scale = 1, onSelect, isSelected }: {
         distance={2}
         color="#ffcc88"
       />
-
-      {isSelected && (
-        <Html distanceFactor={10} position={[0, 1.8, 0]} center>
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="flex flex-col items-center gap-4"
-          >
-            <div className="bg-black/90 text-white px-6 py-3 rounded-2xl backdrop-blur-xl border border-white/10 shadow-2xl text-center min-w-[200px]">
-              <h3 className="text-lg font-bold tracking-tight uppercase mb-1">{RING_DATA[id].name}</h3>
-              <p className="text-[10px] text-white/50 uppercase tracking-widest leading-relaxed max-w-[180px] mx-auto">
-                {RING_DATA[id].description}
-              </p>
-            </div>
-          </motion.div>
-        </Html>
-      )}
     </group>
   );
 }
 
 function LavaIsland() {
   const { scene } = useGLTF('https://pub-a56d70d158b1414d83c3856ea210601c.r2.dev/Ring/LavaIsland.glb');
-  return <primitive object={scene} position={[0, -1, 0]} scale={2.5} />;
+  return <primitive object={scene} position={[1.2, -1, 0]} scale={2.5} />;
 }
 
 function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSelectedId: (id: string | null) => void }) {
@@ -173,37 +158,62 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
   
   const isInteracting = useRef(false);
   const spotLightRef = useRef<THREE.SpotLight>(null);
+  const introFinished = useRef(false);
+  const introStartTime = useRef<number | null>(null);
   
-  // Adjusted for new scale
-  const pedestalY = 0.8;
-  const ringSpacing = 2.5;
+  // Adjusted for new scale and centering on the top surface
+  const pedestalY = 1.4;
+  const ringSpacing = 4;
 
   useFrame((state, delta) => {
-    if (ringsGroupRef.current) {
-      const targetX = selectedId ? -RING_IDS.indexOf(selectedId) * ringSpacing : 0;
-      ringsGroupRef.current.position.x = THREE.MathUtils.lerp(ringsGroupRef.current.position.x, targetX, 0.1);
+    // Intro Animation Logic
+    if (!introFinished.current) {
+      if (introStartTime.current === null) introStartTime.current = state.clock.elapsedTime;
+      const elapsed = state.clock.elapsedTime - introStartTime.current;
+      const duration = 4; // 4 seconds fly-in
+      const t = Math.min(elapsed / duration, 1);
+      
+      // Ease out cubic
+      const ease = 1 - Math.pow(1 - t, 3);
+      
+      // Start from side/far, end at front/near
+      const startPos = new THREE.Vector3(15, 5, 15);
+      const endPos = new THREE.Vector3(0, pedestalY + 1.5, 6);
+      camera.position.lerpVectors(startPos, endPos, ease);
+      
+      const startTarget = new THREE.Vector3(5, 0, 0);
+      const endTarget = new THREE.Vector3(0, pedestalY, 0);
+      const currentTarget = new THREE.Vector3().lerpVectors(startTarget, endTarget, ease);
+      
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(currentTarget);
+        controlsRef.current.update();
+      }
+      
+      if (t >= 1) introFinished.current = true;
+      return; // Skip normal frame logic during intro
     }
 
-    if (selectedId && ringsGroupRef.current) {
+    if (selectedId) {
       const isMobile = state.size.width < 768;
       
       if (!isInteracting.current) {
-        const targetCamPos = new THREE.Vector3(0, isMobile ? 1.5 : 1.2, isMobile ? 4 : 3);
+        const targetCamPos = new THREE.Vector3(0, pedestalY + (isMobile ? 1.2 : 0.8), isMobile ? 4 : 3);
         camera.position.lerp(targetCamPos, 0.05);
         
         if (controlsRef.current) {
-          const lookTarget = new THREE.Vector3(0, pedestalY, 0);
+          const lookTarget = new THREE.Vector3(0, pedestalY + 0.2, 0);
           controlsRef.current.target.lerp(lookTarget, 0.1);
           controlsRef.current.update();
         }
       }
 
       if (spotLightRef.current) {
-        spotLightRef.current.position.set(0, 3, 1);
+        spotLightRef.current.position.set(0, pedestalY + 3, 1);
         spotLightRef.current.target.position.set(0, pedestalY, 0);
       }
     } else {
-      camera.position.lerp(new THREE.Vector3(0, 2, 6), 0.03);
+      camera.position.lerp(new THREE.Vector3(0, pedestalY + 1.5, 6), 0.03);
       if (controlsRef.current) {
         controlsRef.current.target.lerp(new THREE.Vector3(0, pedestalY, 0), 0.03);
         controlsRef.current.update();
@@ -243,6 +253,27 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
       
       <LavaIsland />
 
+      <Suspense fallback={null}>
+        <group>
+          {RING_IDS.map((id) => {
+            const isSelected = selectedId === id;
+            if (!isSelected) return null;
+            
+            return (
+              <Ring 
+                key={id}
+                id={id} 
+                position={[0, pedestalY + 0.7, 0]} 
+                rotation={[0, 0, 0]}
+                scale={0.35}
+                onSelect={setSelectedId}
+                isSelected={true}
+              />
+            );
+          })}
+        </group>
+      </Suspense>
+
       <spotLight 
         ref={spotLightRef}
         angle={0.2} 
@@ -257,32 +288,6 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
         <Vignette eskil={false} offset={0.1} darkness={1.5} />
         <Noise opacity={0.02} />
       </EffectComposer>
-      
-      <group ref={ringsGroupRef}>
-        {RING_IDS.map((id, index) => {
-          const x = index * ringSpacing;
-          const isSelected = selectedId === id;
-          
-          return (
-            <Float 
-              key={id} 
-              speed={isSelected ? 0 : 2} 
-              rotationIntensity={isSelected ? 0 : 0.5} 
-              floatIntensity={isSelected ? 0 : 0.5}
-              enabled={!isSelected}
-            >
-              <Ring 
-                id={id} 
-                position={[x, pedestalY + 0.2, 0]} 
-                rotation={[0, 0, 0]}
-                scale={isSelected ? 0.35 : 0.2}
-                onSelect={setSelectedId}
-                isSelected={isSelected}
-              />
-            </Float>
-          );
-        })}
-      </group>
     </>
   );
 }
@@ -359,7 +364,7 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="relative w-full h-full"
           >
-            <FluidInversionCursor className="w-full h-full">
+            <FluidInversionCursor className="w-full h-full" splatRadius={0.08} cursorSize={20}>
               <div className="absolute inset-0 z-0 overflow-hidden">
                 <video 
                   ref={videoRef}
@@ -382,10 +387,9 @@ export default function App() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 1.1 }}
                     onClick={() => setView('gallery')}
-                    className="absolute z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 px-10 py-4 bg-white text-black font-bold rounded-full uppercase text-xs tracking-[0.3em] hover:bg-white/90 transition-all flex items-center gap-3 group"
+                    className="absolute z-50 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 p-6 bg-white text-black rounded-full hover:bg-white/90 transition-all flex items-center justify-center group shadow-[0_0_30px_rgba(255,255,255,0.3)]"
                   >
-                    Enter Forge
-                    <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                    <ArrowRight size={24} className="group-hover:translate-x-1 transition-transform" />
                   </motion.button>
                 )}
               </AnimatePresence>
@@ -404,7 +408,6 @@ export default function App() {
                   <button 
                     onClick={() => setSelectedId(null)}
                     className="p-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-colors backdrop-blur-md group"
-                    title="Reset View"
                   >
                     <RotateCcw size={18} className="group-hover:rotate-[-45deg] transition-transform" />
                   </button>
@@ -414,17 +417,14 @@ export default function App() {
               {/* Main Scene */}
               <div className="w-full h-full">
                 <Canvas shadows gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
-                  <Suspense fallback={null}>
-                    <Scene selectedId={selectedId} setSelectedId={setSelectedId} />
-                  </Suspense>
+                  <Scene selectedId={selectedId} setSelectedId={setSelectedId} />
                 </Canvas>
               </div>
 
               {/* Loading Overlay */}
               <Suspense fallback={
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#050505] z-50">
-                  <Loader2 className="animate-spin mb-4 text-white/40" size={40} />
-                  <p className="text-xs uppercase tracking-widest text-white/40">Loading Assets...</p>
+                  <Loader2 className="animate-spin text-white/20" size={40} />
                 </div>
               }>
                 {/* Empty suspense to trigger the fallback above */}
@@ -458,21 +458,6 @@ export default function App() {
 
                     {/* Minimal Edge UI */}
                     <div className="absolute inset-0 pointer-events-none z-20">
-                      {/* Top Left: Name */}
-                      <motion.div 
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        className="absolute top-12 left-12"
-                      >
-                        <h2 className="text-4xl font-light tracking-tighter opacity-80 uppercase">
-                          {RING_DATA[selectedId].name}
-                        </h2>
-                        <p className="text-[9px] text-white/30 uppercase tracking-[0.4em] mt-1">
-                          Artifact {selectedId}
-                        </p>
-                      </motion.div>
-
                       {/* Top Right: Exit */}
                       <motion.button
                         initial={{ opacity: 0, y: -20 }}
@@ -483,32 +468,10 @@ export default function App() {
                       >
                         <X size={20} />
                       </motion.button>
-
-                      {/* Bottom Center: Action */}
-                      <motion.div 
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 20 }}
-                        className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-6"
-                      >
-                        <p className="text-[9px] text-white/20 uppercase tracking-widest max-w-[200px] leading-relaxed">
-                          {RING_DATA[selectedId].description.split('.')[0]}
-                        </p>
-                      </motion.div>
                     </div>
                 </>
               )}
               </AnimatePresence>
-
-              {/* Footer / Instructions */}
-              <footer className="absolute bottom-8 left-8 z-10 pointer-events-none hidden md:block">
-                <div className="flex items-center gap-3 text-white/30">
-                  <Info size={14} />
-                  <p className="text-[10px] uppercase tracking-widest">
-                    Click a ring to inspect • Arrows to cycle • Drag to rotate • Right-click to pan • Scroll to zoom
-                  </p>
-                </div>
-              </footer>
 
               {/* Background Atmosphere */}
               <div className="absolute inset-0 bg-radial from-white/[0.03] to-transparent pointer-events-none" />
