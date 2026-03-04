@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+@theme {
+  --font-saundale: "Saundale", sans-serif;
+  --font-fette: "Fette Trump-Deutsch", sans-serif;
+}
