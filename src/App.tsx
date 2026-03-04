@@ -163,7 +163,7 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
   
   // Adjusted for new scale and centering on the top surface
   const pedestalY = 1.4;
-  const ringSpacing = 4;
+  const ringSpacing = 5;
 
   useFrame((state, delta) => {
     // Intro Animation Logic
@@ -192,6 +192,13 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
       
       if (t >= 1) introFinished.current = true;
       return; // Skip normal frame logic during intro
+    }
+
+    // Smooth horizontal cycling for rings
+    if (ringsGroupRef.current) {
+      const targetX = selectedId ? -RING_IDS.indexOf(selectedId) * ringSpacing : 0;
+      // Slower, smoother lerp for the "slide" effect
+      ringsGroupRef.current.position.x = THREE.MathUtils.lerp(ringsGroupRef.current.position.x, targetX, 0.06);
     }
 
     if (selectedId) {
@@ -254,20 +261,18 @@ function Scene({ selectedId, setSelectedId }: { selectedId: string | null, setSe
       <LavaIsland />
 
       <Suspense fallback={null}>
-        <group>
-          {RING_IDS.map((id) => {
+        <group ref={ringsGroupRef}>
+          {RING_IDS.map((id, index) => {
             const isSelected = selectedId === id;
-            if (!isSelected) return null;
-            
             return (
               <Ring 
                 key={id}
                 id={id} 
-                position={[0, pedestalY + 0.7, 0]} 
+                position={[index * ringSpacing, pedestalY + 0.9, 0]} 
                 rotation={[0, 0, 0]}
                 scale={0.35}
                 onSelect={setSelectedId}
-                isSelected={true}
+                isSelected={isSelected}
               />
             );
           })}
